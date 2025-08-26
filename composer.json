@@ -1,0 +1,20 @@
+{
+    "name": "cyber/lmcp",
+    "description": "A simple MCP server for testing RESTful APIs",
+    "type": "project",
+    "require": {
+        "php-mcp/server": "^1.0",
+        "guzzlehttp/guzzle": "^7.0"
+    },
+    "authors": [
+        {
+            "name": "Gemini",
+            "email": "gemini@google.com"
+        }
+    ],
+    "minimum-stability": "dev",
+    "prefer-stable": true,
+    "require-dev": {
+        "phpstan/phpstan": "^1.0"
+    }
+}
