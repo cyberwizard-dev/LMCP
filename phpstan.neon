@@ -1,5 +1,0 @@
-parameters:
-    level: 5
-    paths:
-        - mcp-server.php
-        - vendor/php-mcp/server/src
