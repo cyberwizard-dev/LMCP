@@ -7,15 +7,17 @@ import nodemailer from "nodemailer";
 import AWS from "aws-sdk";
 import sgMail from "@sendgrid/mail";
 import { z } from "zod";
+import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 
 const execAsync = util.promisify(exec);
 
-export function registerTools(server) {
+function registerTools(server) {
   //
-  // ─── FLUTTER TOOLS ──────────────────────────────────────────
+  // ─── FLUTTER ──────────────────────────────────────────
   //
   server.registerTool({
-    name: "flutter_create_project",
+    name: "flutter_create",
     description: "Create a new Flutter project",
     inputSchema: z.object({ name: z.string() }),
     async handler({ name }) {
@@ -25,7 +27,7 @@ export function registerTools(server) {
   });
 
   server.registerTool({
-    name: "flutter_run_app",
+    name: "flutter_run",
     description: "Run a Flutter project on a device/emulator",
     inputSchema: z.object({
       projectPath: z.string(),
@@ -40,7 +42,7 @@ export function registerTools(server) {
   });
 
   server.registerTool({
-    name: "flutter_pub_command",
+    name: "flutter_pub",
     description: "Run flutter pub commands (get, add, outdated, etc.)",
     inputSchema: z.object({
       projectPath: z.string(),
@@ -55,26 +57,25 @@ export function registerTools(server) {
   });
 
   server.registerTool({
-    name: "flutter_build_project",
-    description: "Build Flutter project for given platform (apk, ios, web, etc.)",
+    name: "flutter_build",
+    description: "Build Flutter project (apk, ios, web, etc.)",
     inputSchema: z.object({
       projectPath: z.string(),
       target: z.string(),
     }),
     async handler({ projectPath, target }) {
-      const { stdout, stderr } = await execAsync(
-        `flutter build ${target}`,
-        { cwd: projectPath }
-      );
+      const { stdout, stderr } = await execAsync(`flutter build ${target}`, {
+        cwd: projectPath,
+      });
       return { content: [{ type: "text", text: stdout || stderr }] };
     },
   });
 
   //
-  // ─── LARAVEL TOOLS ──────────────────────────────────────────
+  // ─── LARAVEL ──────────────────────────────────────────
   //
   server.registerTool({
-    name: "laravel_new_project",
+    name: "laravel_new",
     description: "Create a new Laravel project",
     inputSchema: z.object({ name: z.string() }),
     async handler({ name }) {
@@ -86,43 +87,185 @@ export function registerTools(server) {
   });
 
   server.registerTool({
-    name: "laravel_artisan_command",
+    name: "laravel_artisan",
     description: "Run any artisan command",
     inputSchema: z.object({
       projectPath: z.string(),
       command: z.string(),
     }),
     async handler({ projectPath, command }) {
-      const { stdout, stderr } = await execAsync(
-        `php artisan ${command}`,
-        { cwd: projectPath }
-      );
+      const { stdout, stderr } = await execAsync(`php artisan ${command}`, {
+        cwd: projectPath,
+      });
       return { content: [{ type: "text", text: stdout || stderr }] };
     },
   });
 
   server.registerTool({
-    name: "laravel_make_generator",
+    name: "laravel_make",
     description: "Generate Laravel resources (controller, model, migration, etc.)",
     inputSchema: z.object({
       projectPath: z.string(),
       type: z.string(),
       name: z.string(),
+      options: z.record(z.string()).optional(),
     }),
-    async handler({ projectPath, type, name }) {
-      const { stdout, stderr } = await execAsync(
-        `php artisan make:${type} ${name}`,
-        { cwd: projectPath }
-      );
+    async handler({ projectPath, type, name, options }) {
+      let command = `php artisan make:${type} ${name}`;
+      if (options) {
+        for (const [key, value] of Object.entries(options)) {
+          const prefix = key.length === 1 ? "-" : "--";
+          if (value === "true" || value === "") {
+            command += ` ${prefix}${key}`;
+          } else {
+            command += ` ${prefix}${key}=${value}`;
+          }
+        }
+      }
+      const { stdout, stderr } = await execAsync(command, { cwd: projectPath });
       return { content: [{ type: "text", text: stdout || stderr }] };
     },
   });
 
+  server.registerTool({
+    name: "laravel_version",
+    description: "Manage Laravel project version stored in .env",
+    inputSchema: z.object({
+      projectPath: z.string(),
+      action: z.enum(["get", "set", "bump"]),
+      version: z.string().optional(),
+      part: z.enum(["major", "minor", "patch"]).default("patch").optional(),
+    }),
+    async handler({ projectPath, action, version, part }) {
+      const envFilePath = path.join(projectPath, ".env");
+      const versionKey = "APP_VERSION";
+
+      const readVersion = async () => {
+        try {
+          const envContent = await fs.readFile(envFilePath, "utf8");
+          const match = envContent.match(
+            new RegExp(`^${versionKey}=(.*)`, "m")
+          );
+          return match ? match[1] : null;
+        } catch (error) {
+          if (error.code === "ENOENT") return null;
+          throw error;
+        }
+      };
+
+      const writeVersion = async (newVersion) => {
+        let envContent = "";
+        try {
+          envContent = await fs.readFile(envFilePath, "utf8");
+        } catch (error) {
+          if (error.code !== "ENOENT") throw error;
+        }
+
+        let lines = envContent.split("\n");
+        let found = false;
+        lines = lines
+          .map((line) => {
+            if (line.startsWith(`${versionKey}=`)) {
+              found = true;
+              return `${versionKey}=${newVersion}`;
+            }
+            return line;
+          })
+          .filter((line) => line.trim() !== "");
+
+        if (!found) {
+          lines.push(`${versionKey}=${newVersion}`);
+        }
+
+        await fs.writeFile(envFilePath, lines.join("\n") + "\n");
+        return newVersion;
+      };
+
+      try {
+        switch (action) {
+          case "get": {
+            const currentVersion = await readVersion();
+            return {
+              content: [
+                {
+                  type: "text",
+                  text: currentVersion
+                    ? `Current version: ${currentVersion}`
+                    : `No version set in .env file.`,
+                },
+              ],
+            };
+          }
+          case "set": {
+            if (!version) {
+              throw new Error("A 'version' is required for the 'set' action.");
+            }
+            const newVersion = await writeVersion(version);
+            return {
+              content: [{ type: "text", text: `Version set to: ${newVersion}` }],
+            };
+          }
+          case "bump": {
+            const currentVersion = await readVersion();
+            if (!currentVersion) {
+              const newVersion = "0.0.1";
+              await writeVersion(newVersion);
+              return {
+                content: [
+                  {
+                    type: "text",
+                    text: `No version found. Initialized to: ${newVersion}`,
+                  },
+                ],
+              };
+            }
+
+            let [major, minor, patch] = currentVersion.split(".").map(Number);
+
+            if (isNaN(major) || isNaN(minor) || isNaN(patch)) {
+              return {
+                content: [
+                  {
+                    type: "text",
+                    text: `Invalid version format '${currentVersion}'. Use semantic versioning (e.g., 1.2.3).`,
+                  },
+                ],
+              };
+            }
+
+            switch (part) {
+              case "major":
+                major++;
+                minor = 0;
+                patch = 0;
+                break;
+              case "minor":
+                minor++;
+                patch = 0;
+                break;
+              case "patch":
+                patch++;
+                break;
+            }
+
+            const newVersion = `${major}.${minor}.${patch}`;
+            await writeVersion(newVersion);
+            return {
+              content: [{ type: "text", text: `Version bumped to: ${newVersion}` }],
+            };
+          }
+        }
+      } catch (error) {
+        return { content: [{ type: "text", text: `Error: ${error.message}` }] };
+      }
+    },
+  });
+
   //
-  // ─── NODE TOOLS ─────────────────────────────────────────────
+  // ─── NODE ─────────────────────────────────────────────
   //
   server.registerTool({
-    name: "node_init_project",
+    name: "node_init",
     description: "Initialize a new Node.js project",
     inputSchema: z.object({ projectName: z.string() }),
     async handler({ projectName }) {
@@ -135,7 +278,7 @@ export function registerTools(server) {
   });
 
   server.registerTool({
-    name: "node_install_packages",
+    name: "node_install",
     description: "Install npm packages into a Node.js project",
     inputSchema: z.object({
       projectPath: z.string(),
@@ -151,24 +294,26 @@ export function registerTools(server) {
   });
 
   server.registerTool({
-    name: "node_run_script",
+    name: "node_run",
     description: "Run npm script or JS file in a Node.js project",
     inputSchema: z.object({
       projectPath: z.string(),
       script: z.string(),
     }),
     async handler({ projectPath, script }) {
-      const cmd = script.endsWith(".js") ? `node ${script}` : `npm run ${script}`;
+      const cmd = script.endsWith(".js")
+        ? `node ${script}`
+        : `npm run ${script}`;
       const { stdout, stderr } = await execAsync(cmd, { cwd: projectPath });
       return { content: [{ type: "text", text: stdout || stderr }] };
     },
   });
 
   //
-  // ─── DATABASE TOOL ──────────────────────────────────────────
+  // ─── DATABASE ──────────────────────────────────────────
   //
   server.registerTool({
-    name: "database_query_mysql",
+    name: "db_query_mysql",
     description: "Run a SQL query on a MySQL database",
     inputSchema: z.object({
       host: z.string(),
@@ -179,18 +324,25 @@ export function registerTools(server) {
     }),
     async handler({ host, user, password, database, query }) {
       const mysql = await import("mysql2/promise");
-      const conn = await mysql.createConnection({ host, user, password, database });
+      const conn = await mysql.createConnection({
+        host,
+        user,
+        password,
+        database,
+      });
       const [rows] = await conn.execute(query);
       await conn.end();
-      return { content: [{ type: "text", text: JSON.stringify(rows, null, 2) }] };
+      return {
+        content: [{ type: "text", text: JSON.stringify(rows, null, 2) }],
+      };
     },
   });
 
   //
-  // ─── ENV FILE TOOL ──────────────────────────────────────────
+  // ─── ENV FILE ──────────────────────────────────────────
   //
   server.registerTool({
-    name: "env_file_manager",
+    name: "env_manage",
     description: "Read, create, update, or delete .env variables",
     inputSchema: z.object({
       projectPath: z.string(),
@@ -212,7 +364,11 @@ export function registerTools(server) {
             const result = lines
               .map((line) => line.split("="))
               .reduce((acc, [k, v]) => ((acc[k] = v), acc), {});
-            return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
+            return {
+              content: [
+                { type: "text", text: JSON.stringify(result, null, 2) },
+              ],
+            };
           }
           case "create":
           case "update": {
@@ -241,11 +397,11 @@ export function registerTools(server) {
   });
 
   //
-  // ─── EMAIL TOOLS (SMTP, SES, SENDGRID, GMAIL) ───────────────
+  // ─── EMAIL (SMTP, SES, SENDGRID) ───────────────
   //
   server.registerTool({
-    name: "email_send_smtp",
-    description: "Send email via SMTP (generic servers, SES, Gmail, etc.)",
+    name: "email_smtp",
+    description: "Send email via SMTP",
     inputSchema: z.object({
       smtpHost: z.string(),
       smtpPort: z.number(),
@@ -271,7 +427,7 @@ export function registerTools(server) {
   });
 
   server.registerTool({
-    name: "email_send_ses_sdk",
+    name: "email_ses",
     description: "Send email using AWS SES SDK",
     inputSchema: z.object({
       accessKeyId: z.string(),
@@ -306,7 +462,7 @@ export function registerTools(server) {
   });
 
   server.registerTool({
-    name: "email_send_sendgrid",
+    name: "email_sendgrid",
     description: "Send email using SendGrid",
     inputSchema: z.object({
       apiKey: z.string(),
@@ -330,9 +486,59 @@ export function registerTools(server) {
     },
   });
 
+server.registerTool({
+  name: "httpRequestTester",
+  description: "Send HTTP requests to any endpoint for testing APIs.",
+  inputSchema: z.object({
+    method: z.string().describe("HTTP method (GET, POST, PUT, DELETE, PATCH, etc.)"),
+    url: z.string().url().describe("The full request URL."),
+    headers: z.record(z.string()).optional().describe("Optional HTTP headers."),
+    data: z.any().optional().describe("Request body (for POST/PUT/PATCH)."),
+  }),
+  async handler({ method, url, headers, data }) {
+    try {
+      const response = await axios({
+        method,
+        url,
+        headers,
+        data,
+        validateStatus: () => true, // Don’t throw on non-200s
+      });
+
+      return {
+        content: [
+          {
+            type: "text",
+            text: JSON.stringify(
+              {
+                status: response.status,
+                statusText: response.statusText,
+                headers: response.headers,
+                data: response.data,
+              },
+              null,
+              2
+            ),
+          },
+        ],
+      };
+    } catch (error) {
+      return {
+        content: [
+          {
+            type: "text",
+            text: `Request failed: ${error.message}`,
+          },
+        ],
+      };
+    }
+  },
+});
+
+
   server.registerTool({
-    name: "smtp_diagnostics",
-    description: "Diagnose SMTP connectivity and credentials",
+    name: "smtp_check",
+    description: "Check SMTP connectivity and credentials",
     inputSchema: z.object({
       host: z.string(),
       port: z.number(),
@@ -349,10 +555,39 @@ export function registerTools(server) {
       });
       try {
         await transporter.verify();
-        return { content: [{ type: "text", text: "SMTP server is reachable and credentials are valid." }] };
+        return {
+          content: [
+            {
+              type: "text",
+              text: "SMTP server is reachable and credentials are valid.",
+            },
+          ],
+        };
       } catch (error) {
-        return { content: [{ type: "text", text: `SMTP Error: ${error.message}` }] };
+        return {
+          content: [{ type: "text", text: `SMTP Error: ${error.message}` }],
+        };
       }
     },
   });
 }
+
+
+
+async function main() {
+  const server = new McpServer({
+    name: "cyber-mcp",
+    version: "1.2.0",
+  });
+
+  registerTools(server);
+
+  const transport = new StdioServerTransport();
+  await server.connect(transport);
+  console.log("Cyber MCP server running on stdio");
+}
+
+main().catch((error) => {
+  console.error("Fatal error:", error);
+  process.exit(1);
+});
