@@ -1,0 +1,7 @@
+{
+    "name": "cyberwizard/lmcp",
+    "require-dev": {
+        "rector/rector": "^2.1",
+        "phpstan/phpstan": "^2.1"
+    }
+}
