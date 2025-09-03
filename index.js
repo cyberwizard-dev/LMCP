@@ -6,7 +6,6 @@ import axios from "axios";
 import nodemailer from "nodemailer";
 import { SESClient, SendEmailCommand } from "@aws-sdk/client-ses";
 import sgMail from "@sendgrid/mail";
-import { z } from "zod";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 
@@ -18,14 +17,6 @@ const sanitizeInput = (input) => {
   return input.replace(/[&|;`$<>(){}!"'\\]/g, '');
 };
 
-// Logging utility
-const log = (level, message) => {
-  const levels = ['error', 'warn', 'info', 'debug'];
-  if (levels.includes(level)) {
-    console.log(`[${level.toUpperCase()}] ${new Date().toISOString()}: ${message}`);
-  }
-};
-
 // Database connection pooling
 let mysqlPool = null;
 let mysqlConfig = null;
@@ -34,95 +25,105 @@ function registerTools(server) {
   //
   // ─── FLUTTER ──────────────────────────────────────────
   //
-  server.registerTool(
+  server.tool(
     "flutter_create",
     {
-      title: "Flutter Create",
+      name: "flutter_create",
       description: "Create a new Flutter project",
-      inputSchema: z.string(),
+      inputSchema: {
+        type: "object",
+        properties: {
+          name: { type: "string" }
+        },
+        required: ["name"]
+      }
     },
     async ({ name }) => {
       try {
         const sanitizedName = sanitizeInput(name);
-        log('info', `Creating Flutter project: ${sanitizedName}`);
         const { stdout, stderr } = await execAsync(`flutter create ${sanitizedName}`);
         return { content: [{ type: "text", text: stdout || stderr }] };
       } catch (error) {
-        log('error', `Flutter create failed: ${error.message}`);
         return { content: [{ type: "text", text: `Error: ${error.message}` }] };
       }
     }
   );
 
-  server.registerTool(
+  server.tool(
     "flutter_run",
     {
-      title: "Flutter Run",
+      name: "flutter_run",
       description: "Run a Flutter project on a device/emulator",
-      inputSchema: z.object({
-        projectPath: z.string(),
-        target: z.string().optional(),
-      }),
+      inputSchema: {
+        type: "object",
+        properties: {
+          projectPath: { type: "string" },
+          target: { type: "string" }
+        },
+        required: ["projectPath"]
+      }
     },
     async ({ projectPath, target }) => {
       try {
         let cmd = "flutter run";
         if (target) cmd += ` --target=${sanitizeInput(target)}`;
-        log('info', `Running Flutter project at: ${projectPath}`);
         const { stdout, stderr } = await execAsync(cmd, { cwd: projectPath });
         return { content: [{ type: "text", text: stdout || stderr }] };
       } catch (error) {
-        log('error', `Flutter run failed: ${error.message}`);
         return { content: [{ type: "text", text: `Error: ${error.message}` }] };
       }
     }
   );
 
-  server.registerTool(
+  server.tool(
     "flutter_pub",
     {
-      title: "Flutter Pub",
+      name: "flutter_pub",
       description: "Run flutter pub commands (get, add, outdated, etc.)",
-      inputSchema: z.object({
-        projectPath: z.string(),
-        command: z.string(),
-      }),
+      inputSchema: {
+        type: "object",
+        properties: {
+          projectPath: { type: "string" },
+          command: { type: "string" }
+        },
+        required: ["projectPath", "command"]
+      }
     },
     async ({ projectPath, command }) => {
       try {
         const sanitizedCommand = sanitizeInput(command);
-        log('info', `Running flutter pub ${sanitizedCommand} at: ${projectPath}`);
         const { stdout, stderr } = await execAsync(`flutter pub ${sanitizedCommand}`, {
           cwd: projectPath,
         });
         return { content: [{ type: "text", text: stdout || stderr }] };
       } catch (error) {
-        log('error', `Flutter pub failed: ${error.message}`);
         return { content: [{ type: "text", text: `Error: ${error.message}` }] };
       }
     }
   );
 
-  server.registerTool(
+  server.tool(
     "flutter_build",
     {
-      title: "Flutter Build",
+      name: "flutter_build",
       description: "Build Flutter project (apk, ios, web, etc.)",
-      inputSchema: z.object({
-        projectPath: z.string(),
-        target: z.string(),
-      }),
+      inputSchema: {
+        type: "object",
+        properties: {
+          projectPath: { type: "string" },
+          target: { type: "string" }
+        },
+        required: ["projectPath", "target"]
+      }
     },
     async ({ projectPath, target }) => {
       try {
         const sanitizedTarget = sanitizeInput(target);
-        log('info', `Building Flutter project for target: ${sanitizedTarget}`);
         const { stdout, stderr } = await execAsync(`flutter build ${sanitizedTarget}`, {
           cwd: projectPath,
         });
         return { content: [{ type: "text", text: stdout || stderr }] };
       } catch (error) {
-        log('error', `Flutter build failed: ${error.message}`);
         return { content: [{ type: "text", text: `Error: ${error.message}` }] };
       }
     }
@@ -131,64 +132,77 @@ function registerTools(server) {
   //
   // ─── LARAVEL ──────────────────────────────────────────
   //
-  server.registerTool(
+  server.tool(
     "laravel_new",
     {
-      title: "Laravel New Project",
+      name: "laravel_new",
       description: "Create a new Laravel project",
-      inputSchema: z.object({ name: z.string() }),
+      inputSchema: {
+        type: "object",
+        properties: {
+          name: { type: "string" }
+        },
+        required: ["name"]
+      }
     },
     async ({ name }) => {
       try {
         const sanitizedName = sanitizeInput(name);
-        log('info', `Creating Laravel project: ${sanitizedName}`);
         const { stdout, stderr } = await execAsync(
           `composer create-project laravel/laravel ${sanitizedName}`
         );
         return { content: [{ type: "text", text: stdout || stderr }] };
       } catch (error) {
-        log('error', `Laravel create failed: ${error.message}`);
         return { content: [{ type: "text", text: `Error: ${error.message}` }] };
       }
     }
   );
 
-  server.registerTool(
+  server.tool(
     "laravel_artisan",
     {
-      title: "Laravel Artisan",
+      name: "laravel_artisan",
       description: "Run any artisan command",
-      inputSchema: z.object({
-        projectPath: z.string(),
-        command: z.string(),
-      }),
+      inputSchema: {
+        type: "object",
+        properties: {
+          projectPath: { type: "string" },
+          command: { type: "string" }
+        },
+        required: ["projectPath", "command"]
+      }
     },
     async ({ projectPath, command }) => {
       try {
         const sanitizedCommand = sanitizeInput(command);
-        log('info', `Running artisan command: ${sanitizedCommand}`);
         const { stdout, stderr } = await execAsync(`php artisan ${sanitizedCommand}`, {
           cwd: projectPath,
         });
         return { content: [{ type: "text", text: stdout || stderr }] };
       } catch (error) {
-        log('error', `Artisan command failed: ${error.message}`);
         return { content: [{ type: "text", text: `Error: ${error.message}` }] };
       }
     }
   );
 
-  server.registerTool(
+  server.tool(
     "laravel_make",
     {
-      title: "Laravel Make",
+      name: "laravel_make",
       description: "Generate Laravel resources (controller, model, migration, etc.)",
-      inputSchema: z.object({
-        projectPath: z.string(),
-        type: z.string(),
-        name: z.string(),
-        options: z.record(z.string()).optional(),
-      }),
+      inputSchema: {
+        type: "object",
+        properties: {
+          projectPath: { type: "string" },
+          type: { type: "string" },
+          name: { type: "string" },
+          options: { 
+            type: "object",
+            additionalProperties: { type: "string" }
+          }
+        },
+        required: ["projectPath", "type", "name"]
+      }
     },
     async ({ projectPath, type, name, options }) => {
       try {
@@ -203,27 +217,35 @@ function registerTools(server) {
             }
           }
         }
-        log('info', `Running Laravel make command: ${command}`);
         const { stdout, stderr } = await execAsync(command, { cwd: projectPath });
         return { content: [{ type: "text", text: stdout || stderr }] };
       } catch (error) {
-        log('error', `Laravel make failed: ${error.message}`);
         return { content: [{ type: "text", text: `Error: ${error.message}` }] };
       }
     }
   );
 
-  server.registerTool(
+  server.tool(
     "laravel_version",
     {
-      title: "Laravel Version Manager",
+      name: "laravel_version",
       description: "Manage Laravel project version stored in .env",
-      inputSchema: z.object({
-        projectPath: z.string(),
-        action: z.enum(["get", "set", "bump"]),
-        version: z.string().optional(),
-        part: z.enum(["major", "minor", "patch"]).default("patch").optional(),
-      }),
+      inputSchema: {
+        type: "object",
+        properties: {
+          projectPath: { type: "string" },
+          action: { 
+            type: "string",
+            enum: ["get", "set", "bump"]
+          },
+          version: { type: "string" },
+          part: { 
+            type: "string",
+            enum: ["major", "minor", "patch"]
+          }
+        },
+        required: ["projectPath", "action"]
+      }
     },
     async ({ projectPath, action, version, part }) => {
       try {
@@ -286,7 +308,6 @@ function registerTools(server) {
           case "set": {
             if (!version) throw new Error("A 'version' is required for 'set'.");
             const newVersion = await writeVersion(version);
-            log('info', `Set Laravel version to: ${newVersion}`);
             return { content: [{ type: "text", text: `Version set to: ${newVersion}` }] };
           }
           case "bump": {
@@ -294,7 +315,6 @@ function registerTools(server) {
             if (!currentVersion) {
               const newVersion = "0.0.1";
               await writeVersion(newVersion);
-              log('info', `Initialized Laravel version to: ${newVersion}`);
               return { content: [{ type: "text", text: `Initialized to: ${newVersion}` }] };
             }
 
@@ -311,12 +331,10 @@ function registerTools(server) {
 
             const newVersion = `${major}.${minor}.${patch}`;
             await writeVersion(newVersion);
-            log('info', `Bumped Laravel version to: ${newVersion}`);
             return { content: [{ type: "text", text: `Version bumped to: ${newVersion}` }] };
           }
         }
       } catch (error) {
-        log('error', `Laravel version management failed: ${error.message}`);
         return { content: [{ type: "text", text: `Error: ${error.message}` }] };
       }
     }
@@ -325,63 +343,80 @@ function registerTools(server) {
   //
   // ─── NODE ─────────────────────────────────────────────
   //
-  server.registerTool(
+  server.tool(
     "node_init",
     {
-      title: "Node Init",
+      name: "node_init",
       description: "Initialize a new Node.js project",
-      inputSchema: z.object({ projectName: z.string() }),
+      inputSchema: {
+        type: "object",
+        properties: {
+          projectName: { type: "string" }
+        },
+        required: ["projectName"]
+      }
     },
     async ({ projectName }) => {
       try {
         const sanitizedName = sanitizeInput(projectName);
-        log('info', `Initializing Node.js project: ${sanitizedName}`);
         await fs.mkdir(sanitizedName, { recursive: true });
         const { stdout, stderr } = await execAsync("npm init -y", { cwd: sanitizedName });
         return { content: [{ type: "text", text: stdout || stderr }] };
       } catch (error) {
-        log('error', `Node init failed: ${error.message}`);
         return { content: [{ type: "text", text: `Error: ${error.message}` }] };
       }
     }
   );
 
-  server.registerTool(
+  server.tool(
     "node_install",
     {
-      title: "Node Install",
+      name: "node_install",
       description: "Install npm packages into a Node.js project",
-      inputSchema: z.object({ projectPath: z.string(), packages: z.array(z.string()) }),
+      inputSchema: {
+        type: "object",
+        properties: {
+          projectPath: { type: "string" },
+          packages: { 
+            type: "array",
+            items: { type: "string" }
+          }
+        },
+        required: ["projectPath", "packages"]
+      }
     },
     async ({ projectPath, packages }) => {
       try {
         const sanitizedPackages = packages.map(pkg => sanitizeInput(pkg)).join(" ");
-        log('info', `Installing packages: ${sanitizedPackages}`);
         const { stdout, stderr } = await execAsync(`npm install ${sanitizedPackages}`, { cwd: projectPath });
         return { content: [{ type: "text", text: stdout || stderr }] };
       } catch (error) {
-        log('error', `Node install failed: ${error.message}`);
         return { content: [{ type: "text", text: `Error: ${error.message}` }] };
       }
     }
   );
 
-  server.registerTool(
+  server.tool(
     "node_run",
     {
-      title: "Node Run",
+      name: "node_run",
       description: "Run npm script or JS file in a Node.js project",
-      inputSchema: z.object({ projectPath: z.string(), script: z.string() }),
+      inputSchema: {
+        type: "object",
+        properties: {
+          projectPath: { type: "string" },
+          script: { type: "string" }
+        },
+        required: ["projectPath", "script"]
+      }
     },
     async ({ projectPath, script }) => {
       try {
         const sanitizedScript = sanitizeInput(script);
         const cmd = script.endsWith(".js") ? `node ${sanitizedScript}` : `npm run ${sanitizedScript}`;
-        log('info', `Running Node.js script: ${cmd}`);
         const { stdout, stderr } = await execAsync(cmd, { cwd: projectPath });
         return { content: [{ type: "text", text: stdout || stderr }] };
       } catch (error) {
-        log('error', `Node run failed: ${error.message}`);
         return { content: [{ type: "text", text: `Error: ${error.message}` }] };
       }
     }
@@ -390,24 +425,25 @@ function registerTools(server) {
   //
   // ─── DATABASE ──────────────────────────────────────────
   //
-  server.registerTool(
+  server.tool(
     "db_query_mysql",
     {
-      title: "MySQL Query",
+      name: "db_query_mysql",
       description: "Run a SQL query on a MySQL database",
-      inputSchema: z.object({
-        host: z.string(),
-        user: z.string(),
-        password: z.string(),
-        database: z.string(),
-        query: z.string(),
-      }),
+      inputSchema: {
+        type: "object",
+        properties: {
+          host: { type: "string" },
+          user: { type: "string" },
+          password: { type: "string" },
+          database: { type: "string" },
+          query: { type: "string" }
+        },
+        required: ["host", "user", "password", "database", "query"]
+      }
     },
     async ({ host, user, password, database, query }) => {
       try {
-        log('info', `Executing MySQL query on database: ${database}`);
-        
-        // Use connection pooling for better performance
         if (!mysqlPool || mysqlConfig?.host !== host || mysqlConfig?.database !== database) {
           const mysql = await import("mysql2/promise");
           mysqlPool = mysql.createPool({
@@ -433,7 +469,6 @@ function registerTools(server) {
           throw error;
         }
       } catch (error) {
-        log('error', `MySQL query failed: ${error.message}`);
         return { content: [{ type: "text", text: `Error: ${error.message}` }] };
       }
     }
@@ -442,17 +477,24 @@ function registerTools(server) {
   //
   // ─── ENV FILE ──────────────────────────────────────────
   //
-  server.registerTool(
+  server.tool(
     "env_manage",
     {
-      title: "ENV Manager",
+      name: "env_manage",
       description: "Read, create, update, or delete .env variables",
-      inputSchema: z.object({ 
-        projectPath: z.string(), 
-        action: z.enum(["read","create","update","delete"]), 
-        key: z.string().optional(), 
-        value: z.string().optional() 
-      }),
+      inputSchema: {
+        type: "object",
+        properties: {
+          projectPath: { type: "string" },
+          action: { 
+            type: "string",
+            enum: ["read", "create", "update", "delete"]
+          },
+          key: { type: "string" },
+          value: { type: "string" }
+        },
+        required: ["projectPath", "action"]
+      }
     },
     async ({ projectPath, action, key, value }) => {
       try {
@@ -479,7 +521,6 @@ function registerTools(server) {
             lines=lines.map(line=>line.startsWith(`${key}=`)?(found=true,`${key}=${value}`):line);
             if(!found) lines.push(`${key}=${value}`);
             await fs.writeFile(envFilePath, lines.join("\n")+"\n");
-            log('info', `Updated env variable: ${key}=${value}`);
             return { content:[{type:"text",text:`${key}=${value}`}] };
           }
           case "delete": {
@@ -488,12 +529,10 @@ function registerTools(server) {
             }
             lines = lines.filter(line=>!line.startsWith(`${key}=`));
             await fs.writeFile(envFilePath, lines.join("\n")+"\n");
-            log('info', `Deleted env variable: ${key}`);
             return { content:[{type:"text",text:`Deleted ${key}`}] };
           }
         }
       } catch(error) {
-        log('error', `Env management failed: ${error.message}`);
         return { content:[{type:"text",text:`Error: ${error.message}`}] };
       }
     }
@@ -502,27 +541,30 @@ function registerTools(server) {
   //
   // ─── EMAIL ──────────────────────────────────────────
   //
-  server.registerTool(
+  server.tool(
     "email_smtp",
     {
-      title: "Email SMTP",
+      name: "email_smtp",
       description: "Send email via SMTP",
-      inputSchema: z.object({ 
-        smtpHost:z.string(), 
-        smtpPort:z.number(), 
-        secure:z.boolean(), 
-        authUser:z.string(), 
-        authPass:z.string(), 
-        from:z.string(), 
-        to:z.string(), 
-        subject:z.string(), 
-        text:z.string().optional(), 
-        html:z.string().optional() 
-      }),
+      inputSchema: {
+        type: "object",
+        properties: {
+          smtpHost: { type: "string" },
+          smtpPort: { type: "number" },
+          secure: { type: "boolean" },
+          authUser: { type: "string" },
+          authPass: { type: "string" },
+          from: { type: "string" },
+          to: { type: "string" },
+          subject: { type: "string" },
+          text: { type: "string" },
+          html: { type: "string" }
+        },
+        required: ["smtpHost", "smtpPort", "secure", "authUser", "authPass", "from", "to", "subject"]
+      }
     },
     async (config) => {
       try {
-        log('info', `Sending email via SMTP to: ${config.to}`);
         const transporter = nodemailer.createTransport({
           host: config.smtpHost,
           port: config.smtpPort,
@@ -532,31 +574,33 @@ function registerTools(server) {
         const info = await transporter.sendMail(config);
         return { content:[{type:"text",text:JSON.stringify(info,null,2)}] };
       } catch (error) {
-        log('error', `SMTP email failed: ${error.message}`);
         return { content:[{type:"text",text:`Error: ${error.message}`}] };
       }
     }
   );
 
-  server.registerTool(
+  server.tool(
     "email_ses",
     {
-      title: "Email SES",
+      name: "email_ses",
       description: "Send email using AWS SES SDK",
-      inputSchema: z.object({ 
-        accessKeyId:z.string(), 
-        secretAccessKey:z.string(), 
-        region:z.string(), 
-        from:z.string(), 
-        to:z.string(), 
-        subject:z.string(), 
-        text:z.string().optional(), 
-        html:z.string().optional() 
-      }),
+      inputSchema: {
+        type: "object",
+        properties: {
+          accessKeyId: { type: "string" },
+          secretAccessKey: { type: "string" },
+          region: { type: "string" },
+          from: { type: "string" },
+          to: { type: "string" },
+          subject: { type: "string" },
+          text: { type: "string" },
+          html: { type: "string" }
+        },
+        required: ["accessKeyId", "secretAccessKey", "region", "from", "to", "subject"]
+      }
     },
     async (config) => {
       try {
-        log('info', `Sending email via SES to: ${config.to}`);
         const sesClient = new SESClient({
           credentials: { 
             accessKeyId: config.accessKeyId, 
@@ -570,8 +614,8 @@ function registerTools(server) {
           Message: { 
             Subject: { Data: config.subject }, 
             Body: { 
-              Text:{Data:config.text||""}, 
-              Html:{Data:config.html||""} 
+              Text:{Data:config.text||""},
+              Html:{Data:config.html||""}
             } 
           },
         };
@@ -579,29 +623,31 @@ function registerTools(server) {
         const result = await sesClient.send(command);
         return { content:[{type:"text",text:JSON.stringify(result,null,2)}] };
       } catch (error) {
-        log('error', `SES email failed: ${error.message}`);
         return { content:[{type:"text",text:`Error: ${error.message}`}] };
       }
     }
   );
 
-  server.registerTool(
+  server.tool(
     "email_sendgrid",
     {
-      title: "Email SendGrid",
+      name: "email_sendgrid",
       description: "Send email using SendGrid",
-      inputSchema: z.object({ 
-        apiKey:z.string(), 
-        from:z.string(), 
-        to:z.string(), 
-        subject:z.string(), 
-        text:z.string().optional(), 
-        html:z.string().optional() 
-      }),
+      inputSchema: {
+        type: "object",
+        properties: {
+          apiKey: { type: "string" },
+          from: { type: "string" },
+          to: { type: "string" },
+          subject: { type: "string" },
+          text: { type: "string" },
+          html: { type: "string" }
+        },
+        required: ["apiKey", "from", "to", "subject"]
+      }
     },
     async (config) => {
       try {
-        log('info', `Sending email via SendGrid to: ${config.to}`);
         sgMail.setApiKey(config.apiKey);
         const msg = { 
           to: config.to, 
@@ -613,69 +659,76 @@ function registerTools(server) {
         const result = await sgMail.send(msg);
         return { content:[{type:"text",text:JSON.stringify(result,null,2)}] };
       } catch (error) {
-        log('error', `SendGrid email failed: ${error.message}`);
         return { content:[{type:"text",text:`Error: ${error.message}`}] };
       }
     }
   );
 
-  server.registerTool(
+  server.tool(
     "http_request",
     {
-      title: "HTTP Request Tester",
+      name: "http_request",
       description: "Send HTTP requests to any endpoint for testing APIs",
-      inputSchema: z.object({
-        method: z.string(),
-        url: z.string().url(),
-        headers: z.record(z.string()).optional(),
-        data: z.any().optional(),
-      }),
+      inputSchema: {
+        type: "object",
+        properties: {
+          method: { type: "string" },
+          url: { type: "string" },
+          headers: { 
+            type: "object",
+            additionalProperties: { type: "string" }
+          },
+          data: { type: "object" }
+        },
+        required: ["method", "url"]
+      }
     },
     async ({ method, url, headers, data }) => {
       try {
-        log('info', `Making HTTP ${method} request to: ${url}`);
-        const response = await axios({ 
-          method, 
-          url, 
-          headers, 
-          data, 
+        const response = await axios({
+          method,
+          url,
+          headers,
+          data,
           validateStatus: () => true,
-          timeout: 30000 
+          timeout: 30000
         });
         return { 
           content: [{ 
             type:"text", 
-            text: JSON.stringify({ 
-              status: response.status, 
-              statusText: response.statusText, 
-              headers: response.headers, 
-              data: response.data 
-            }, null, 2) 
+            text: JSON.stringify({
+              status: response.status,
+              statusText: response.statusText,
+              headers: response.headers,
+              data: response.data
+            }, null, 2)
           }] 
         };
       } catch(error) {
-        log('error', `HTTP request failed: ${error.message}`);
         return { content: [{ type:"text", text:`Request failed: ${error.message}` }] };
       }
     }
   );
 
-  server.registerTool(
+  server.tool(
     "smtp_check",
     {
-      title: "SMTP Check",
+      name: "smtp_check",
       description: "Check SMTP connectivity and credentials",
-      inputSchema: z.object({
-        host: z.string(),
-        port: z.number(),
-        secure: z.boolean(),
-        authUser: z.string(),
-        authPass: z.string(),
-      }),
+      inputSchema: {
+        type: "object",
+        properties: {
+          host: { type: "string" },
+          port: { type: "number" },
+          secure: { type: "boolean" },
+          authUser: { type: "string" },
+          authPass: { type: "string" }
+        },
+        required: ["host", "port", "secure", "authUser", "authPass"]
+      }
     },
     async (config) => {
       try {
-        log('info', `Checking SMTP connection to: ${config.host}`);
         const transporter = nodemailer.createTransport({
           host: config.host,
           port: config.port,
@@ -685,7 +738,6 @@ function registerTools(server) {
         await transporter.verify();
         return { content: [{ type:"text", text: "SMTP server is reachable and credentials are valid." }] };
       } catch(error) {
-        log('error', `SMTP check failed: ${error.message}`);
         return { content: [{ type:"text", text:`SMTP Error: ${error.message}` }] };
       }
     }
@@ -694,21 +746,27 @@ function registerTools(server) {
   //
   // ─── FILE OPERATIONS ──────────────────────────────────
   //
-  server.registerTool(
+  server.tool(
     "file_operations",
     {
-      title: "File Operations",
+      name: "file_operations",
       description: "Read, write, copy, move, or delete files",
-      inputSchema: z.object({
-        operation: z.enum(["read", "write", "copy", "move", "delete"]),
-        path: z.string(),
-        content: z.string().optional(),
-        destination: z.string().optional(),
-      }),
+      inputSchema: {
+        type: "object",
+        properties: {
+          operation: { 
+            type: "string",
+            enum: ["read", "write", "copy", "move", "delete"]
+          },
+          path: { type: "string" },
+          content: { type: "string" },
+          destination: { type: "string" }
+        },
+        required: ["operation", "path"]
+      }
     },
     async ({ operation, path, content, destination }) => {
       try {
-        log('info', `Performing file operation: ${operation} on ${path}`);
         switch (operation) {
           case "read":
             const data = await fs.readFile(path, "utf8");
@@ -730,7 +788,6 @@ function registerTools(server) {
             return { content: [{ type: "text", text: "File deleted successfully" }] };
         }
       } catch (error) {
-        log('error', `File operation failed: ${error.message}`);
         return { content: [{ type: "text", text: `Error: ${error.message}` }] };
       }
     }
@@ -739,26 +796,28 @@ function registerTools(server) {
   //
   // ─── GIT OPERATIONS ───────────────────────────────────
   //
-  server.registerTool(
+  server.tool(
     "git_operation",
     {
-      title: "Git Operations",
+      name: "git_operation",
       description: "Execute git commands",
-      inputSchema: z.object({
-        projectPath: z.string(),
-        command: z.string(),
-      }),
+      inputSchema: {
+        type: "object",
+        properties: {
+          projectPath: { type: "string" },
+          command: { type: "string" }
+        },
+        required: ["projectPath", "command"]
+      }
     },
     async ({ projectPath, command }) => {
       try {
         const sanitizedCommand = sanitizeInput(command);
-        log('info', `Running git command: ${sanitizedCommand}`);
         const { stdout, stderr } = await execAsync(`git ${sanitizedCommand}`, {
           cwd: projectPath,
         });
         return { content: [{ type: "text", text: stdout || stderr }] };
       } catch (error) {
-        log('error', `Git operation failed: ${error.message}`);
         return { content: [{ type: "text", text: `Error: ${error.message}` }] };
       }
     }
@@ -767,19 +826,25 @@ function registerTools(server) {
   //
   // ─── DIRECTORY OPERATIONS ─────────────────────────────
   //
-  server.registerTool(
+  server.tool(
     "directory_operations",
     {
-      title: "Directory Operations",
+      name: "directory_operations",
       description: "Create, list, or delete directories",
-      inputSchema: z.object({
-        operation: z.enum(["create", "list", "delete"]),
-        path: z.string(),
-      }),
+      inputSchema: {
+        type: "object",
+        properties: {
+          operation: { 
+            type: "string",
+            enum: ["create", "list", "delete"]
+          },
+          path: { type: "string" }
+        },
+        required: ["operation", "path"]
+      }
     },
     async ({ operation, path }) => {
       try {
-        log('info', `Performing directory operation: ${operation} on ${path}`);
         switch (operation) {
           case "create":
             await fs.mkdir(path, { recursive: true });
@@ -792,7 +857,6 @@ function registerTools(server) {
             return { content: [{ type: "text", text: "Directory deleted successfully" }] };
         }
       } catch (error) {
-        log('error', `Directory operation failed: ${error.message}`);
         return { content: [{ type: "text", text: `Error: ${error.message}` }] };
       }
     }
@@ -800,22 +864,16 @@ function registerTools(server) {
 }
 
 async function main() {
-  const server = new McpServer({ 
-    name: "cyber-mcp", 
-    version: "1.3.0",
-    capabilities: {
-      tools: {}
-    }
+  const server = new McpServer({
+    name: "cyber-mcp",
+    version: "1.3.0"
   });
   
   registerTools(server);
   const transport = new StdioServerTransport();
   await server.connect(transport);
-  
-  log('info', 'Cyber MCP server started successfully');
 }
 
-main().catch(error => {
-  log('error', `Fatal error: ${error.message}`);
+main().catch(() => {
   process.exit(1);
-});
+}); 
