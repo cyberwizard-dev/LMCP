@@ -664,51 +664,58 @@ function registerTools(server) {
     }
   );
 
-  server.tool(
-    "http_request",
-    {
-      name: "http_request",
-      description: "Send HTTP requests to any endpoint for testing APIs",
-      inputSchema: {
-        type: "object",
-        properties: {
-          method: { type: "string" },
-          url: { type: "string" },
-          headers: { 
-            type: "object",
-            additionalProperties: { type: "string" }
-          },
-          data: { type: "object" }
+server.tool(
+  "http_request",
+  {
+    name: "http_request",
+    description: "Send HTTP requests to any endpoint for testing APIs",
+    inputSchema: {
+      type: "object",
+      properties: {
+        method: { type: "string" },
+        url: { type: "string" },
+        headers: { 
+          type: "object",
+          additionalProperties: { type: "string" }
         },
-        required: ["method", "url"]
-      }
-    },
-    async ({ method, url, headers, data }) => {
-      try {
-        const response = await axios({
-          method,
-          url,
-          headers,
-          data,
-          validateStatus: () => true,
-          timeout: 30000
-        });
-        return { 
-          content: [{ 
-            type:"text", 
-            text: JSON.stringify({
-              status: response.status,
-              statusText: response.statusText,
-              headers: response.headers,
-              data: response.data
-            }, null, 2)
-          }] 
-        };
-      } catch(error) {
-        return { content: [{ type:"text", text:`Request failed: ${error.message}` }] };
-      }
+        data: { type: "object" }
+      },
+      required: ["method", "url"]
     }
-  );
+  },
+  async ({ method, url, headers, data }) => {
+    try {
+      // Auto-normalize the URL (prepend http:// if missing)
+      if (!/^https?:\/\//i.test(url)) {
+        url = `http://${url}`;
+      }
+
+      const response = await axios({
+        method,
+        url,
+        headers,
+        data,
+        validateStatus: () => true,
+        timeout: 30000
+      });
+
+      return { 
+        content: [{ 
+          type:"text", 
+          text: JSON.stringify({
+            status: response.status,
+            statusText: response.statusText,
+            headers: response.headers,
+            data: response.data
+          }, null, 2)
+        }] 
+      };
+    } catch(error) {
+      return { content: [{ type:"text", text:`Request failed: ${error.message}` }] };
+    }
+  }
+);
+
 
   server.tool(
     "smtp_check",
